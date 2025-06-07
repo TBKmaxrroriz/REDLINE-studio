@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Dépose ton selfie - Gala</title>
+</head>
+<body>
+  <h2>Dépose ton selfie pour retrouver tes photos après le gala 📸</h2>
+  <form action="/upload" method="POST" enctype="multipart/form-data">
+    <label>Nom complet :</label><br>
+    <input type="text" name="fullname" placeholder="Ex : Jean Dupont" required><br><br>
+
+    <label>Choisis ton selfie :</label><br>
+    <input type="file" name="selfie" accept="image/*" required><br><br>
+
+    <button type="submit">Envoyer</button>
+  </form>
+</body>
+</html>
