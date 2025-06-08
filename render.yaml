@@ -2,7 +2,10 @@ services:
   - type: web
     name: gala-selfie
     env: python
-    buildCommand: ""
-    startCommand: python app.py
-    plan: free
-    autoDeploy: true
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app"
+    envVars:
+      - key: FACEPP_API_KEY
+        value: zRpX_mvGViSiovfRh3-BdXsfKbTDkSyx
+      - key: FACEPP_API_SECRET
+        value: vP8N1vVVa0G_4CfxXTyn2mIwwan9PXuL
