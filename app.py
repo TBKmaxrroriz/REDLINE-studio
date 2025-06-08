@@ -1,68 +1,77 @@
 import os
 import requests
-from flask import Flask, request, render_template
-from werkzeug.utils import secure_filename
-from shutil import copy2
-
-FACEPP_API_KEY = "zRpX_mvGViSiovfRh3-BdXsfKbTDkSyx"
-FACEPP_API_SECRET = "vP8N1vVVa0G_4CfxXTyn2mIwwan9PXuL"
-FACESET_TOKEN = None  # généré dynamiquement
+import uuid
+import shutil
+from flask import Flask, request, render_template, send_from_directory
 
 app = Flask(__name__)
-UPLOAD_FOLDER = "uploads"
-GALA_FOLDER = "gala_photos"
-OUTPUT_FOLDER = "generated"
+
+# Clés Face++ (mets-les dans les variables d’environnement Render)
+API_KEY = os.getenv('zRpX_mvGViSiovfRh3-BdXsfKbTDkSyx')
+API_SECRET = os.getenv('vP8N1vVVa0G_4CfxXTyn2mIwwan9PXuL')
+
+# Dossiers
+UPLOAD_FOLDER = 'uploads'
+PHOTOS_GALA = 'photos_gala'
+PHOTOS_UTILISATEURS = 'photos_utilisateurs'
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(GALA_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+os.makedirs(PHOTOS_UTILISATEURS, exist_ok=True)
 
-def facepp_detect(image_path):
-    url = "https://api-us.faceplusplus.com/facepp/v3/detect"
-    with open(image_path, "rb") as f:
-        res = requests.post(url, data={
-            "api_key": FACEPP_API_KEY,
-            "api_secret": FACEPP_API_SECRET
-        }, files={"image_file": f})
-    return res.json()["faces"][0]["face_token"]
+# Obtenir le face_token d'une image
+def detect_face(image_path):
+    response = requests.post(
+        'https://api-us.faceplusplus.com/facepp/v3/detect',
+        data={'api_key': API_KEY, 'api_secret': API_SECRET},
+        files={'image_file': open(image_path, 'rb')}
+    ).json()
+    faces = response.get('faces', [])
+    if faces:
+        return faces[0]['face_token']
+    return None
 
-def facepp_compare(token1, token2):
-    url = "https://api-us.faceplusplus.com/facepp/v3/compare"
-    res = requests.post(url, data={
-        "api_key": FACEPP_API_KEY,
-        "api_secret": FACEPP_API_SECRET,
-        "face_token1": token1,
-        "face_token2": token2
-    })
-    return res.json().get("confidence", 0)
+# Comparer deux visages
+def compare_faces(token1, token2):
+    response = requests.post(
+        'https://api-us.faceplusplus.com/facepp/v3/compare',
+        data={
+            'api_key': API_KEY,
+            'api_secret': API_SECRET,
+            'face_token1': token1,
+            'face_token2': token2
+        }
+    ).json()
+    return response.get('confidence', 0)
 
-@app.route("/", methods=["GET", "POST"])
-def index():
-    if request.method == "POST":
-        file = request.files["selfie"]
-        if file:
-            filename = secure_filename(file.filename)
-            path = os.path.join(UPLOAD_FOLDER, filename)
-            file.save(path)
+@app.route('/', methods=['GET', 'POST'])
+def upload_file():
+    if request.method == 'POST':
+        uploaded_file = request.files['file']
+        if not uploaded_file:
+            return 'Aucun fichier reçu', 400
 
-            selfie_token = facepp_detect(path)
+        selfie_path = os.path.join(UPLOAD_FOLDER, str(uuid.uuid4()) + ".jpg")
+        uploaded_file.save(selfie_path)
+        selfie_token = detect_face(selfie_path)
+        if not selfie_token:
+            return 'Aucun visage détecté', 400
 
-            matched_photos = []
-            for img in os.listdir(GALA_FOLDER):
-                gala_path = os.path.join(GALA_FOLDER, img)
-                try:
-                    gala_token = facepp_detect(gala_path)
-                    conf = facepp_compare(selfie_token, gala_token)
-                    if conf > 75:
-                        matched_photos.append(gala_path)
-                except Exception:
-                    continue
+        # Créer le dossier personnel
+        user_id = str(uuid.uuid4())[:8]
+        user_folder = os.path.join(PHOTOS_UTILISATEURS, user_id)
+        os.makedirs(user_folder, exist_ok=True)
 
-            user_folder = os.path.join(OUTPUT_FOLDER, selfie_token)
-            os.makedirs(user_folder, exist_ok=True)
-            for photo in matched_photos:
-                copy2(photo, user_folder)
+        # Parcourir les photos du gala
+        for filename in os.listdir(PHOTOS_GALA):
+            gala_path = os.path.join(PHOTOS_GALA, filename)
+            if not filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                continue
+            gala_token = detect_face(gala_path)
+            if gala_token:
+                confidence = compare_faces(selfie_token, gala_token)
+                if confidence > 80:  # Seuil de similarité
+                    shutil.copy(gala_path, os.path.join(user_folder, filename))
 
-            return f"Photos copiées dans: {user_folder} — Tu peux créer un lien de partage depuis ce dossier."
+        return f'Ton dossier a été créé avec l\'identifiant : {user_id}'
 
-    return render_template("index.html")
+    return render_template('upload.html')
